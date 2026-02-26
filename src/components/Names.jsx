@@ -19,6 +19,7 @@ const DEFAULT_NOOBS = [
   { name: "Samarth", status: "in" },
   { name: "Swarup", status: "in" },
   { name: "Anand", status: "in" },
+  { name: "Satya", status: "in" },
 ];
 
 function Names() {
@@ -45,9 +46,33 @@ function Names() {
           const state = docSnap.data();
           console.log("Data loaded from Firebase:", state);
 
-          // If server data exists, override our local display
-          if (state.proPlayers) setProPlayers(state.proPlayers);
-          if (state.noobPlayers) setNoobPlayers(state.noobPlayers);
+          // Safety function to transform data if it's just a list of strings
+          const normalizePlayers = (list) => {
+            if (!Array.isArray(list)) return [];
+            return list.map((item) =>
+              typeof item === "string" ? { name: item, status: "in" } : item,
+            );
+          };
+
+          const firebasePros = normalizePlayers(state.proPlayers || state.pros);
+          const firebaseNoobs = normalizePlayers(
+            state.noobPlayers || state.noobs,
+          );
+
+          if (firebasePros.length > 0) {
+            console.log("Setting Pros from Firebase:", firebasePros);
+            setProPlayers(firebasePros);
+          } else if (state.proPlayers || state.pros) {
+            // Handle case where field exists but is empty
+            setProPlayers([]);
+          }
+
+          if (firebaseNoobs.length > 0) {
+            setNoobPlayers(firebaseNoobs);
+          } else if (state.noobPlayers || state.noobs) {
+            setNoobPlayers([]);
+          }
+
           setTeams(state.teams || { team1: [], team2: [] });
           setLastShuffled(state.lastShuffled || null);
           setError(null);
@@ -76,10 +101,9 @@ function Names() {
       (err) => {
         console.error("Firebase Sync Error:", err);
         setIsLoading(false);
-        // Don't show generic error if we already have default players visible
-        if (!proPlayers.length) {
-          setError("Connecting to server... (Viewing local backup)");
-        }
+        setError(
+          "Connecting to server failed. You are viewing a local backup. Please check your internet or Firebase rules.",
+        );
       },
     );
 
@@ -120,6 +144,31 @@ function Names() {
     broadcastState({ noobPlayers: newList });
   };
 
+  const resetToDefaults = async () => {
+    if (!isAdmin) return;
+    if (
+      !window.confirm(
+        "ARE YOU SURE? This will overwrite the database with the default names and reset all teams.",
+      )
+    )
+      return;
+
+    try {
+      const resetState = {
+        proPlayers: DEFAULT_PROS,
+        noobPlayers: DEFAULT_NOOBS,
+        teams: { team1: [], team2: [] },
+        lastShuffled: null,
+      };
+      await setDoc(gameDocRef, resetState);
+      // Local state will be updated automatically by onSnapshot
+      alert("Database has been reset to defaults!");
+    } catch (err) {
+      console.error("Reset failed:", err);
+      alert("Failed to reset database. Check console for errors.");
+    }
+  };
+
   const generateTeams = () => {
     if (!isAdmin) return;
     const activePros = proPlayers.filter((p) => p.status === "in");
@@ -131,11 +180,14 @@ function Names() {
     const team1 = [];
     const team2 = [];
 
+    // Distribute Pros: T1, T2, T1, T2...
     shuffledPros.forEach((p, i) => {
       if (i % 2 === 0) team1.push(p);
       else team2.push(p);
     });
 
+    // Distribute Noobs: T2, T1, T2, T1...
+    // We reverse the order for noobs to balance out the counts if Pros were uneven
     shuffledNoobs.forEach((p, i) => {
       if (i % 2 === 0) team2.push(p);
       else team1.push(p);
@@ -154,8 +206,8 @@ function Names() {
   };
 
   return (
-    <div className="p-10 min-h-screen text-white bg-[#0a0a0a]">
-      <div className="max-w-8xl mx-auto space-y-12">
+    <div className="p-4 md:p-10 min-h-screen text-white bg-[#0a0a0a]">
+      <div className="max-w-7xl mx-auto space-y-12">
         {error && (
           <div className="bg-red-500/20 border border-red-500/50 p-4 rounded-xl text-red-400 font-bold text-center mb-8">
             {error}
@@ -189,12 +241,18 @@ function Names() {
         />
 
         {isAdmin && (
-          <div className="flex justify-center pt-8">
+          <div className="flex flex-col md:flex-row justify-center items-center gap-4 pt-8">
             <button
               onClick={generateTeams}
-              className="bg-yellow-500 hover:bg-yellow-400 text-black font-black px-12 py-4 rounded-2xl text-xl uppercase tracking-tighter shadow-[0_0_30px_rgba(234,179,8,0.3)] transition-all hover:shadow-[0_0_50px_rgba(234,179,8,0.5)] active:scale-90"
+              className="w-full md:w-auto bg-yellow-500 hover:bg-yellow-400 text-black font-black px-12 py-4 rounded-2xl text-xl uppercase tracking-tighter shadow-[0_0_30px_rgba(234,179,8,0.3)] transition-all hover:shadow-[0_0_50px_rgba(234,179,8,0.5)] active:scale-95"
             >
-              Generate Balanced Teams
+              Shuffle Teams
+            </button>
+            <button
+              onClick={resetToDefaults}
+              className="w-full md:w-auto bg-red-600/20 hover:bg-red-600/40 text-red-500 border border-red-500/50 font-bold px-8 py-4 rounded-2xl text-sm uppercase tracking-widest transition-all active:scale-95"
+            >
+              Reset Database to Defaults
             </button>
           </div>
         )}
