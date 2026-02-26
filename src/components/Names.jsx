@@ -9,14 +9,14 @@ const DEFAULT_PROS = [
   { name: "Mrigank", status: "in" },
   { name: "Rajat", status: "in" },
   { name: "Anuj", status: "in" },
+  { name: "Kiran", status: "in" },
+  { name: "Sambit", status: "in" },
 ];
 
 const DEFAULT_NOOBS = [
   { name: "Agarwala", status: "in" },
   { name: "Dhonde", status: "in" },
   { name: "Samarth", status: "in" },
-  { name: "Kiran", status: "in" },
-  { name: "Sambit", status: "in" },
   { name: "Swarup", status: "in" },
   { name: "Anand", status: "in" },
 ];
