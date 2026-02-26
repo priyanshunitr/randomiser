@@ -10,4 +10,7 @@ export default defineConfig({
       },
     }),
   ],
+  server: {
+    allowedHosts: ["linh-unidling-loise.ngrok-free.dev"],
+  },
 })

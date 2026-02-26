@@ -1,48 +1,97 @@
 import { useState, useEffect } from "react";
-import io from "socket.io-client";
+import { doc, onSnapshot, updateDoc, setDoc } from "firebase/firestore";
+import { db } from "../firebase";
 import PlayerSection from "./PlayerSection";
 import TeamDisplay from "./TeamDisplay";
 
-const socket = io(import.meta.env.VITE_SOCKET_URL || "http://localhost:3001");
+const DEFAULT_PROS = [
+  { name: "Priyanshu", status: "in" },
+  { name: "Mrigank", status: "in" },
+  { name: "Rajat", status: "in" },
+  { name: "Anuj", status: "in" },
+];
+
+const DEFAULT_NOOBS = [
+  { name: "Agarwala", status: "in" },
+  { name: "Dhonde", status: "in" },
+  { name: "Samarth", status: "in" },
+  { name: "Kiran", status: "in" },
+  { name: "Sambit", status: "in" },
+  { name: "Swarup", status: "in" },
+  { name: "Anand", status: "in" },
+];
 
 function Names() {
   const [proPlayers, setProPlayers] = useState([]);
   const [noobPlayers, setNoobPlayers] = useState([]);
   const [teams, setTeams] = useState({ team1: [], team2: [] });
   const [lastShuffled, setLastShuffled] = useState(null);
+  const [error, setError] = useState(null);
 
   const isAdmin = sessionStorage.getItem("isAdmin") === "true";
+  const gameDocRef = doc(db, "gameData", "state");
 
   useEffect(() => {
-    // Receive initial state from server
-    socket.on("init_state", (state) => {
-      setProPlayers(state.proPlayers);
-      setNoobPlayers(state.noobPlayers);
-      setTeams(state.teams);
-      setLastShuffled(state.lastShuffled);
-    });
+    console.log("Connecting to Firestore...");
 
-    // Listen for real-time updates from other users
-    socket.on("state_changed", (state) => {
-      setProPlayers(state.proPlayers);
-      setNoobPlayers(state.noobPlayers);
-      setTeams(state.teams);
-      setLastShuffled(state.lastShuffled);
-    });
+    const unsubscribe = onSnapshot(
+      gameDocRef,
+      async (docSnap) => {
+        if (docSnap.exists()) {
+          const state = docSnap.data();
+          console.log("Real-time data received:", state);
 
-    // Manually request state in case we missed the connection blast
-    socket.emit("get_state");
+          // If document exists but is missing players, fill them (Self-healing)
+          if (isAdmin && (!state.proPlayers || state.proPlayers.length === 0)) {
+            console.log("Database found but empty. Initializing players...");
+            await updateDoc(gameDocRef, {
+              proPlayers: DEFAULT_PROS,
+              noobPlayers: DEFAULT_NOOBS,
+            });
+          }
 
-    return () => {
-      socket.off("init_state");
-      socket.off("state_changed");
-    };
-  }, []);
+          setProPlayers(state.proPlayers || []);
+          setNoobPlayers(state.noobPlayers || []);
+          setTeams(state.teams || { team1: [], team2: [] });
+          setLastShuffled(state.lastShuffled || null);
+        } else {
+          console.log("No database document found.");
+          if (isAdmin) {
+            console.log("Admin detected. Creating initial state...");
+            try {
+              await setDoc(gameDocRef, {
+                proPlayers: DEFAULT_PROS,
+                noobPlayers: DEFAULT_NOOBS,
+                teams: { team1: [], team2: [] },
+                lastShuffled: null,
+              });
+            } catch (err) {
+              console.error("Critical failure creating initial state:", err);
+              setError(
+                "Firebase Error: Make sure your Firestore Rules are set to 'Test Mode'.",
+              );
+            }
+          } else {
+            setError("Waiting for Admin to initialize the game list...");
+          }
+        }
+      },
+      (err) => {
+        console.error("Firestore Subscribe Error:", err);
+        setError("Connection Error. Check your console (F12) for details.");
+      },
+    );
 
-  // Helper to broadcast state to others
-  const broadcastState = (newState) => {
+    return () => unsubscribe();
+  }, [isAdmin]);
+
+  const broadcastState = async (newState) => {
     if (isAdmin) {
-      socket.emit("update_state", newState);
+      try {
+        await updateDoc(gameDocRef, newState);
+      } catch (error) {
+        console.error("Error updating document: ", error);
+      }
     }
   };
 
@@ -52,7 +101,7 @@ function Names() {
       p.name === name ? { ...p, status: p.status === "in" ? "out" : "in" } : p,
     );
     setProPlayers(newList);
-    broadcastState({ proPlayers: newList, noobPlayers, teams, lastShuffled });
+    broadcastState({ proPlayers: newList });
   };
 
   const toggleNoobStatus = (name) => {
@@ -61,7 +110,7 @@ function Names() {
       p.name === name ? { ...p, status: p.status === "in" ? "out" : "in" } : p,
     );
     setNoobPlayers(newList);
-    broadcastState({ proPlayers, noobPlayers: newList, teams, lastShuffled });
+    broadcastState({ noobPlayers: newList });
   };
 
   const generateTeams = () => {
@@ -69,20 +118,17 @@ function Names() {
     const activePros = proPlayers.filter((p) => p.status === "in");
     const activeNoobs = noobPlayers.filter((p) => p.status === "in");
 
-    // Shuffle both lists separately for balance
     const shuffledPros = [...activePros].sort(() => Math.random() - 0.5);
     const shuffledNoobs = [...activeNoobs].sort(() => Math.random() - 0.5);
 
     const team1 = [];
     const team2 = [];
 
-    // Distribute Pros
     shuffledPros.forEach((p, i) => {
       if (i % 2 === 0) team1.push(p);
       else team2.push(p);
     });
 
-    // Distribute Noobs
     shuffledNoobs.forEach((p, i) => {
       if (i % 2 === 0) team2.push(p);
       else team1.push(p);
@@ -90,11 +136,11 @@ function Names() {
 
     const now = new Date().toLocaleTimeString();
     const newTeams = { team1, team2 };
+
     setTeams(newTeams);
     setLastShuffled(now);
+
     broadcastState({
-      proPlayers,
-      noobPlayers,
       teams: newTeams,
       lastShuffled: now,
     });
@@ -103,6 +149,12 @@ function Names() {
   return (
     <div className="p-10 min-h-screen text-white bg-[#0a0a0a]">
       <div className="max-w-8xl mx-auto space-y-12">
+        {error && (
+          <div className="bg-red-500/20 border border-red-500/50 p-4 rounded-xl text-red-400 font-bold text-center mb-8">
+            {error}
+          </div>
+        )}
+
         {isAdmin && (
           <div className="bg-yellow-500/20 border border-yellow-500/50 p-4 rounded-xl text-yellow-400 font-bold text-center mb-8">
             ADMIN MODE: You can toggle status and shuffle teams.
@@ -123,7 +175,6 @@ function Names() {
           isAdmin={isAdmin}
         />
 
-        {/* Randomize Button */}
         {isAdmin && (
           <div className="flex justify-center pt-8">
             <button
@@ -135,7 +186,6 @@ function Names() {
           </div>
         )}
 
-        {/* Last Shuffled Time */}
         {lastShuffled && (
           <div className="text-center text-white font-mono text-lg uppercase tracking-[0.3em] py-4">
             Last Shuffled:{" "}
@@ -143,7 +193,6 @@ function Names() {
           </div>
         )}
 
-        {/* Teams Display */}
         {(teams.team1.length > 0 || teams.team2.length > 0) && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8 pt-4">
             <TeamDisplay
