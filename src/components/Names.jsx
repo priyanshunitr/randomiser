@@ -3,7 +3,7 @@ import io from "socket.io-client";
 import PlayerSection from "./PlayerSection";
 import TeamDisplay from "./TeamDisplay";
 
-const socket = io("http://localhost:3001");
+const socket = io(import.meta.env.VITE_SOCKET_URL || "http://localhost:3001");
 
 function Names() {
   const [proPlayers, setProPlayers] = useState([]);

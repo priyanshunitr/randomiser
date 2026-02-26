@@ -1,3 +1,4 @@
+require("dotenv").config();
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
@@ -7,9 +8,15 @@ const app = express();
 app.use(cors());
 
 const server = http.createServer(app);
+
+const allowedOrigins = [
+  "http://localhost:5173",
+  process.env.ALLOWED_ORIGIN
+].filter(Boolean);
+
 const io = new Server(server, {
   cors: {
-    origin: "https://randomiser2.vercel.app", // Vite's default port
+    origin: allowedOrigins,
     methods: ["GET", "POST"],
   },
 });
