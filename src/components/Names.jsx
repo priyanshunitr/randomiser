@@ -22,42 +22,41 @@ const DEFAULT_NOOBS = [
 ];
 
 function Names() {
-  const [proPlayers, setProPlayers] = useState([]);
-  const [noobPlayers, setNoobPlayers] = useState([]);
+  const [proPlayers, setProPlayers] = useState(DEFAULT_PROS); // Show defaults by default
+  const [noobPlayers, setNoobPlayers] = useState(DEFAULT_NOOBS); // Show defaults by default
   const [teams, setTeams] = useState({ team1: [], team2: [] });
   const [lastShuffled, setLastShuffled] = useState(null);
   const [error, setError] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   const isAdmin = sessionStorage.getItem("isAdmin") === "true";
   const gameDocRef = doc(db, "gameData", "state");
 
   useEffect(() => {
-    console.log("Connecting to Firestore...");
+    console.log("Firebase Connection Initialized. Admin Status:", isAdmin);
 
+    // Listen to real-time database
     const unsubscribe = onSnapshot(
       gameDocRef,
       async (docSnap) => {
+        setIsLoading(false);
+
         if (docSnap.exists()) {
           const state = docSnap.data();
-          console.log("Real-time data received:", state);
+          console.log("Data loaded from Firebase:", state);
 
-          // If document exists but is missing players, fill them (Self-healing)
-          if (isAdmin && (!state.proPlayers || state.proPlayers.length === 0)) {
-            console.log("Database found but empty. Initializing players...");
-            await updateDoc(gameDocRef, {
-              proPlayers: DEFAULT_PROS,
-              noobPlayers: DEFAULT_NOOBS,
-            });
-          }
-
-          setProPlayers(state.proPlayers || []);
-          setNoobPlayers(state.noobPlayers || []);
+          // If server data exists, override our local display
+          if (state.proPlayers) setProPlayers(state.proPlayers);
+          if (state.noobPlayers) setNoobPlayers(state.noobPlayers);
           setTeams(state.teams || { team1: [], team2: [] });
           setLastShuffled(state.lastShuffled || null);
+          setError(null);
         } else {
-          console.log("No database document found.");
+          console.log("Database is currently empty.");
           if (isAdmin) {
-            console.log("Admin detected. Creating initial state...");
+            console.log(
+              "Admin detected. Initializing database with defaults...",
+            );
             try {
               await setDoc(gameDocRef, {
                 proPlayers: DEFAULT_PROS,
@@ -66,19 +65,21 @@ function Names() {
                 lastShuffled: null,
               });
             } catch (err) {
-              console.error("Critical failure creating initial state:", err);
+              console.error("Firebase Setup Error:", err);
               setError(
-                "Firebase Error: Make sure your Firestore Rules are set to 'Test Mode'.",
+                "Firebase Error: Check project settings and CORS rules.",
               );
             }
-          } else {
-            setError("Waiting for Admin to initialize the game list...");
           }
         }
       },
       (err) => {
-        console.error("Firestore Subscribe Error:", err);
-        setError("Connection Error. Check your console (F12) for details.");
+        console.error("Firebase Sync Error:", err);
+        setIsLoading(false);
+        // Don't show generic error if we already have default players visible
+        if (!proPlayers.length) {
+          setError("Connecting to server... (Viewing local backup)");
+        }
       },
     );
 
@@ -89,8 +90,14 @@ function Names() {
     if (isAdmin) {
       try {
         await updateDoc(gameDocRef, newState);
-      } catch (error) {
-        console.error("Error updating document: ", error);
+      } catch (err) {
+        console.error("Broadcast failed:", err);
+        // If update failed because doc doesn't exist, use setDoc
+        await setDoc(
+          gameDocRef,
+          { proPlayers, noobPlayers, teams, lastShuffled, ...newState },
+          { merge: true },
+        );
       }
     }
   };
@@ -156,8 +163,14 @@ function Names() {
         )}
 
         {isAdmin && (
-          <div className="bg-yellow-500/20 border border-yellow-500/50 p-4 rounded-xl text-yellow-400 font-bold text-center mb-8">
-            ADMIN MODE: You can toggle status and shuffle teams.
+          <div className="bg-yellow-500/20 border border-yellow-500/50 p-4 rounded-xl text-yellow-400 font-bold text-center mb-8 animate-pulse">
+            ADMIN MODE ACTIVE
+          </div>
+        )}
+
+        {isLoading && !proPlayers.length && (
+          <div className="flex justify-center py-20">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-yellow-500"></div>
           </div>
         )}
 
