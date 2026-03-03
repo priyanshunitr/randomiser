@@ -10,7 +10,7 @@ const DEFAULT_PROS = [
   { name: "Rajat", status: "in" },
   { name: "Anuj", status: "in" },
   { name: "Kiran", status: "in" },
-  { name: "Sambit", status: "in" },
+  { name: "Anand", status: "in" },
 ];
 
 const DEFAULT_NOOBS = [
@@ -18,7 +18,7 @@ const DEFAULT_NOOBS = [
   { name: "Dhonde", status: "in" },
   { name: "Samarth", status: "in" },
   { name: "Swarup", status: "in" },
-  { name: "Anand", status: "in" },
+  { name: "Sambit", status: "in" },
   { name: "Satya", status: "in" },
 ];
 
